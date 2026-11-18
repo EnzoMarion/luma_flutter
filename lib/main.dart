@@ -23,6 +23,7 @@ const panelColors = [
   Color(0xff62b9e8),
   Color(0xffa34dff),
 ];
+const panelColorNames = ['Vert', 'Blanc', 'Orange', 'Rouge', 'Bleu', 'Violet'];
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -74,6 +75,9 @@ class LumaApp extends StatelessWidget {
                 borderRadius: BorderRadius.circular(16),
               ),
             ),
+          ),
+          textButtonTheme: TextButtonThemeData(
+            style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
           ),
         ),
         home: const LumaHome(),
@@ -258,21 +262,16 @@ class _LumaHomeState extends State<LumaHome> {
 
   String _sendTitle(String kind) {
     if (c.demo) return 'Démonstration terminée';
-    if (kind == 'I') return '${pixelIcons[c.icon].label} envoyé';
-    if (kind == 'D') return 'Dessin envoyé';
-    if (kind == 'S') return 'Réglages appliqués';
-    if (kind == 'C') return 'Panneau effacé';
-    return 'Message envoyé';
+    if (kind == 'I') return '${pixelIcons[c.icon].label} transmis';
+    if (kind == 'D') return 'Dessin transmis';
+    if (kind == 'S') return 'Réglages transmis';
+    if (kind == 'C') return 'Effacement transmis';
+    return 'Message transmis';
   }
 
   String _sendDetail(String kind) {
     if (c.demo) return 'Aucune donnée n’a été envoyée à un panneau réel.';
-    if (kind == 'I' || kind == 'D')
-      return 'La commande a été envoyée au panneau.';
-    if (kind == 'S') return 'Les réglages ont été envoyés au panneau.';
-    if (kind == 'C')
-      return 'La commande d’effacement a été envoyée. Votre texte reste disponible.';
-    return 'Le message a été envoyé au panneau.';
+    return 'Transfert Bluetooth terminé. Le firmware ne confirme pas encore l’affichage sur la matrice.';
   }
 
   Future<void> _confirmClear() async {
@@ -328,44 +327,53 @@ class _LumaHomeState extends State<LumaHome> {
                               ),
                             ),
                             const Spacer(),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 7,
-                              ),
-                              decoration: BoxDecoration(
-                                color: surface,
-                                border: Border.all(color: stroke),
-                                borderRadius: BorderRadius.circular(30),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.circle,
-                                    size: 6,
-                                    color: connected ? lime : muted,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    c.demo
-                                        ? 'Démo'
-                                        : connected
-                                            ? 'Connecté'
-                                            : 'Hors ligne',
-                                    style: const TextStyle(
-                                      fontSize: 11,
+                            Semantics(
+                              liveRegion: true,
+                              label: c.demo
+                                  ? 'État du panneau : démonstration'
+                                  : connected
+                                      ? 'État du panneau : connecté en Bluetooth'
+                                      : 'État du panneau : hors ligne',
+                              child: ExcludeSemantics(
+                                  child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 7,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: surface,
+                                  border: Border.all(color: stroke),
+                                  borderRadius: BorderRadius.circular(30),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.circle,
+                                      size: 6,
+                                      color: connected ? lime : muted,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      c.demo
+                                          ? 'Démo'
+                                          : connected
+                                              ? 'Connecté'
+                                              : 'Hors ligne',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: muted,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    const Icon(
+                                      Icons.bluetooth,
+                                      size: 14,
                                       color: muted,
                                     ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  const Icon(
-                                    Icons.bluetooth,
-                                    size: 14,
-                                    color: muted,
-                                  ),
-                                ],
-                              ),
+                                  ],
+                                ),
+                              )),
                             ),
                           ],
                         ),
@@ -395,12 +403,14 @@ class _LumaHomeState extends State<LumaHome> {
                               if (c.error != null)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 20),
-                                  child: _card(
-                                    child: Text(
-                                      c.error!,
-                                      style: const TextStyle(color: red),
-                                    ),
-                                  ),
+                                  child: Semantics(
+                                      liveRegion: true,
+                                      child: _card(
+                                        child: Text(
+                                          c.error!,
+                                          style: const TextStyle(color: red),
+                                        ),
+                                      )),
                                 ),
                             ],
                           ),
@@ -561,6 +571,27 @@ class _LumaHomeState extends State<LumaHome> {
       const Text('Allumez votre panneau, puis choisissez-le ci-dessous.',
           style: TextStyle(color: muted, fontSize: 12, height: 1.4)),
       const SizedBox(height: 16),
+      if ((offline || failed) && c.selected != null) ...[
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: c.reconnect,
+            icon: const Icon(Icons.refresh),
+            label: Text('Reconnecter ${c.selected!.name}'),
+          ),
+        ),
+        if (offline && c.reconnectAttempts > 0)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              c.reconnectAttempts < LumaController.maxReconnectAttempts
+                  ? 'Reconnexion automatique ${c.reconnectAttempts}/${LumaController.maxReconnectAttempts}…'
+                  : 'Reconnexion automatique terminée. Réessayez manuellement.',
+              style: const TextStyle(color: muted, fontSize: 12),
+            ),
+          ),
+        const SizedBox(height: 12),
+      ],
       _panelOption(
         title: 'Panneau Luma',
         detail: '32 × 8 pixels · MAX7219',
@@ -807,23 +838,29 @@ class _LumaHomeState extends State<LumaHome> {
         Wrap(spacing: 9, children: [
           for (var i = 0; i < panelColors.length; i++)
             Semantics(
-              label: 'Couleur ${i + 1}',
+              label: 'Couleur ${panelColorNames[i]}',
               selected: selectedColor == i,
               button: true,
-              child: InkWell(
-                customBorder: const CircleBorder(),
-                onTap: () => _setPreviewColor(i),
-                child: Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: panelColors[i],
-                      border: Border.all(
-                          color: selectedColor == i ? Colors.white : stroke,
-                          width: selectedColor == i ? 2 : 1),
-                    )),
-              ),
+              child: SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: () => _setPreviewColor(i),
+                    child: Center(
+                        child: Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: panelColors[i],
+                              border: Border.all(
+                                  color: selectedColor == i
+                                      ? Colors.white
+                                      : stroke,
+                                  width: selectedColor == i ? 2 : 1),
+                            ))),
+                  )),
             ),
         ]),
       ];
@@ -856,6 +893,7 @@ class _LumaHomeState extends State<LumaHome> {
         style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
         decoration: InputDecoration(
           counterText: '',
+          labelText: 'Message à afficher',
           hintText: 'Votre message',
           errorText: c.message.isNotEmpty
               ? validateMessage(c.message, c.messageAlphabet)
@@ -907,30 +945,34 @@ class _LumaHomeState extends State<LumaHome> {
         Wrap(spacing: 9, children: [
           for (var i = 0; i < panelColors.length; i++)
             Semantics(
-              label: 'Couleur ${i + 1}',
+              label: 'Couleur ${panelColorNames[i]}',
               selected: selectedColor == i,
               button: true,
-              child: InkWell(
-                customBorder: const CircleBorder(),
-                onTap: () => _setPreviewColor(i),
-                child: Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: panelColors[i],
-                    border: Border.all(
-                        color: selectedColor == i ? Colors.white : stroke,
-                        width: selectedColor == i ? 2 : 1),
-                  ),
-                ),
-              ),
+              child: SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: () => _setPreviewColor(i),
+                    child: Center(
+                        child: Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: panelColors[i],
+                        border: Border.all(
+                            color: selectedColor == i ? Colors.white : stroke,
+                            width: selectedColor == i ? 2 : 1),
+                      ),
+                    )),
+                  )),
             ),
         ]),
         const SizedBox(height: 10),
         SizedBox(
           width: double.infinity,
-          height: 40,
+          height: 48,
           child: OutlinedButton(
             onPressed: () {
               input.text = 'BONJOUR';
@@ -1057,6 +1099,8 @@ class _LumaHomeState extends State<LumaHome> {
         ]),
         Slider(
           value: c.settings.brightness.toDouble(),
+          semanticFormatterCallback: (value) =>
+              'Luminosité ${(value * 100 / 15).round()} pour cent',
           min: 0,
           max: 15,
           divisions: 15,
@@ -1136,6 +1180,8 @@ class _LumaHomeState extends State<LumaHome> {
               : c.settings.speedMs > 35
                   ? 1
                   : 2,
+          semanticFormatterCallback: (value) =>
+              'Vitesse ${_speedName([100, 50, 20][value.round()])}',
           min: 0,
           max: 2,
           divisions: 2,
@@ -1199,13 +1245,16 @@ class _LumaHomeState extends State<LumaHome> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 20,
-                height: 1.15,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -1,
+            Semantics(
+              header: true,
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 20,
+                  height: 1.15,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -1,
+                ),
               ),
             ),
             const SizedBox(height: 10),

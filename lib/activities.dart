@@ -103,7 +103,7 @@ class _ActivitiesPageState extends State<ActivitiesPage> with WidgetsBindingObse
     await showDialog<void>(context: context, builder: (ctx) => AlertDialog(
       icon: Icon(success ? Icons.check_circle_outline : Icons.error_outline),
       title: Text(success ? '$label envoyé' : 'Envoi impossible'),
-      content: Text(success ? 'Le Bluetooth a acquitté l’envoi.' : widget.controller.error ?? 'Connecte le panneau puis réessaie.'),
+      content: Text(success ? 'Transfert Bluetooth terminé. L’affichage sur le panneau n’est pas confirmé.' : widget.controller.error ?? 'Connecte le panneau puis réessaie.'),
       actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Terminé'))],
     ));
   }

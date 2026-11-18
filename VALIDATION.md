@@ -2,8 +2,10 @@
 
 Mise à jour du 18 novembre 2026.
 
-- Après le retrait de l'arabe, `flutter test --no-pub` a réussi : 13 tests.
-- `flutter analyze --no-pub --no-fatal-infos --no-fatal-warnings lib test` ne relève aucune erreur bloquante dans les sources de l'application. Il reste 23 remarques de style ou avertissements. L'analyse globale échoue sur des tests incompatibles du code tiers dans `vendor/reactive_ble_mobile`.
+- Les tests Flutter couvrent désormais la reconnexion après coupure, sa limite de trois essais, l'annulation après déconnexion volontaire, ainsi que les libellés et dimensions des touches de couleur.
+- `flutter test --no-pub` : 15 tests réussis. `flutter build apk --debug --no-pub` : APK Android compilé avec succès.
+- Le comportement BLE réel après coupure et l'annonce TalkBack/VoiceOver restent à vérifier sur téléphone avec le panneau ; les tests utilisent un transport simulé.
+- `flutter analyze --no-pub --no-fatal-infos --no-fatal-warnings lib test` ne relève aucune erreur bloquante dans les sources de l'application. Il reste 21 remarques de style ou avertissements. L'analyse globale échoue sur des tests incompatibles du code tiers dans `vendor/reactive_ble_mobile`.
 - L'application Android a été compilée et lancée sur le téléphone Xiaomi de développement lors des itérations précédentes.
 - Le présent changement regroupe les modifications Flutter locales et actualise la documentation pour leur publication. Les essais physiques du panneau et la validation des écritures non latines sur chaque matrice restent à faire avec l'ESP32.
 - La compilation iOS et les fonctions natives spécifiques à iOS ne sont pas validées : ce travail requiert un Mac avec Xcode et un iPhone.

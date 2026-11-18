@@ -14,6 +14,7 @@ class BleTransport implements PanelTransport {
   final _connection = StreamController<bool>.broadcast();
   StreamSubscription<ConnectionStateUpdate>? _link;
   String? _device;
+  bool _readyToWrite = false;
   bool _sending = false;
   bool _liveSending = false;
   @override
@@ -75,16 +76,13 @@ class BleTransport implements PanelTransport {
         deviceId: _device!,
       );
 
-  void _failPending() {
-    // Ce firmware n'expose pas de caractéristique de notification.
-  }
-
   @override
   Future<void> connect(PanelDevice device) async {
     await disconnect();
     await _prepare();
     final ready = Completer<void>();
     _device = device.id;
+    _readyToWrite = false;
     _link = _ble
         .connectToDevice(
       id: device.id,
@@ -97,7 +95,7 @@ class BleTransport implements PanelTransport {
         } else if (update.connectionState ==
             DeviceConnectionState.disconnected) {
           _device = null;
-          _failPending();
+          _readyToWrite = false;
           if (!ready.isCompleted)
             ready.completeError(
               StateError('Connexion refusée ou interrompue.'),
@@ -107,7 +105,7 @@ class BleTransport implements PanelTransport {
       },
       onError: (Object error) {
         _device = null;
-        _failPending();
+        _readyToWrite = false;
         if (!ready.isCompleted) ready.completeError(error);
         _connection.add(false);
       },
@@ -119,13 +117,19 @@ class BleTransport implements PanelTransport {
         (s) =>
             s.serviceId == Uuid.parse(serviceUuid) &&
             s.characteristics.any(
-              (c) => c.characteristicId == Uuid.parse(writeUuid),
+              (c) =>
+                  c.characteristicId == Uuid.parse(writeUuid) &&
+                  c.isWritableWithResponse,
             ),
       );
       if (!valid)
         throw StateError(
-          'Le firmware de ce panneau ne correspond pas au protocole Luma v1.',
+          'Service BLE ou écriture avec réponse absente. Vérifiez le firmware du panneau.',
         );
+      if (_device != device.id) {
+        throw StateError('Connexion interrompue pendant la découverte BLE.');
+      }
+      _readyToWrite = true;
       _connection.add(true);
     } catch (_) {
       await disconnect();
@@ -135,18 +139,25 @@ class BleTransport implements PanelTransport {
 
   @override
   Future<void> sendPackets(List<List<int>> packets) async {
-    if (_device == null) throw StateError('Panneau déconnecté.');
+    if (_device == null || !_readyToWrite) {
+      throw StateError('Panneau déconnecté.');
+    }
     if (_sending) throw StateError('Un envoi est déjà en cours.');
+    if (packets.any((bytes) => bytes.isEmpty || bytes.length > 20)) {
+      throw ArgumentError('Paquet Bluetooth invalide');
+    }
     _sending = true;
     try {
       for (final bytes in packets) {
-        if (bytes.isEmpty || bytes.length > 20)
-          throw ArgumentError('Paquet Bluetooth invalide');
         await _ble
             .writeCharacteristicWithResponse(_characteristic(writeUuid),
                 value: bytes)
             .timeout(const Duration(seconds: 5));
       }
+    } catch (_) {
+      await disconnect();
+      _connection.add(false);
+      rethrow;
     } finally {
       _sending = false;
     }
@@ -154,7 +165,9 @@ class BleTransport implements PanelTransport {
 
   @override
   Future<void> sendLive(List<int> packet) async {
-    if (_device == null) throw StateError('Panneau déconnecté.');
+    if (_device == null || !_readyToWrite) {
+      throw StateError('Panneau déconnecté.');
+    }
     if (packet.isEmpty || packet.length > 20)
       throw ArgumentError('Paquet Bluetooth invalide');
     if (_sending || _liveSending)
@@ -176,7 +189,9 @@ class BleTransport implements PanelTransport {
       int speedMs = 100,
       ScrollMode mode = ScrollMode.auto,
       PanelAlphabet alphabet = PanelAlphabet.latin]) async {
-    if (_device == null) throw StateError('Panneau déconnecté.');
+    if (_device == null || !_readyToWrite) {
+      throw StateError('Panneau déconnecté.');
+    }
     final List<List<int>> chunks;
     if (kind == 'T' && requiresRasterFont(payload, alphabet)) {
       final error = validateMessage(payload, alphabet);
@@ -198,7 +213,7 @@ class BleTransport implements PanelTransport {
     await _link?.cancel();
     _link = null;
     _device = null;
-    _failPending();
+    _readyToWrite = false;
   }
 
   @override

@@ -10,10 +10,17 @@ import 'transport.dart';
 enum LinkState { idle, scanning, connecting, connected, empty, offline, error }
 
 class LumaController extends ChangeNotifier {
+  LumaController({PanelTransport Function()? transportFactory})
+      : _transportFactory = transportFactory ?? BleTransport.new;
+
+  final PanelTransport Function() _transportFactory;
   PanelTransport? _transport;
   StreamSubscription<PanelDevice>? _scan;
   StreamSubscription<bool>? _connection;
   Timer? _scanTimer;
+  Timer? _reconnectTimer;
+  int _reconnectAttempts = 0;
+  static const int maxReconnectAttempts = 3;
   bool _disposed = false;
   int _operation = 0;
   LinkState state = LinkState.idle;
@@ -35,6 +42,7 @@ class LumaController extends ChangeNotifier {
   String? _displayedKind;
   String _displayedPayload = '';
   bool get connected => state == LinkState.connected;
+  int get reconnectAttempts => _reconnectAttempts;
   void _emit() {
     if (!_disposed) notifyListeners();
   }
@@ -126,12 +134,14 @@ class LumaController extends ChangeNotifier {
 
   Future<void> search({required bool demonstration}) async {
     final generation = ++_operation;
+    _reconnectTimer?.cancel();
+    _reconnectAttempts = 0;
     await _stopScan();
     await _connection?.cancel();
     await _transport?.dispose();
     if (_disposed || generation != _operation) return;
     demo = demonstration;
-    _transport = demo ? DemoTransport() : BleTransport();
+    _transport = demo ? DemoTransport() : _transportFactory();
     devices.clear();
     error = null;
     state = LinkState.scanning;
@@ -139,8 +149,9 @@ class LumaController extends ChangeNotifier {
     _connection = _transport!.connection.listen((up) {
       if (!up && state == LinkState.connected) {
         state = LinkState.offline;
-        error = 'Le lien s’est interrompu. Votre message reste disponible.';
+        error = 'Connexion perdue. Votre message reste disponible.';
         _emit();
+        _scheduleReconnect();
       }
     });
     _scan = _transport!.scan().listen(
@@ -172,9 +183,37 @@ class LumaController extends ChangeNotifier {
     _emit();
   }
 
-  Future<void> connect(PanelDevice device) async {
+  void _scheduleReconnect() {
+    if (_disposed ||
+        demo ||
+        selected == null ||
+        _reconnectAttempts >= maxReconnectAttempts) return;
+    _reconnectTimer?.cancel();
+    final attempt = ++_reconnectAttempts;
+    final generation = _operation;
+    _reconnectTimer = Timer(Duration(seconds: attempt * 2), () {
+      if (_disposed || generation != _operation || state != LinkState.offline) {
+        return;
+      }
+      unawaited(connect(selected!, automatic: true));
+    });
+    _emit();
+  }
+
+  Future<void> reconnect() async {
+    final device = selected;
+    if (device == null) {
+      await search(demonstration: false);
+      return;
+    }
+    await connect(device);
+  }
+
+  Future<void> connect(PanelDevice device, {bool automatic = false}) async {
     if (state == LinkState.connecting) return;
     final generation = ++_operation;
+    _reconnectTimer?.cancel();
+    if (!automatic) _reconnectAttempts = 0;
     await _stopScan();
     selected = device;
     state = LinkState.connecting;
@@ -184,6 +223,7 @@ class LumaController extends ChangeNotifier {
       await _transport!.connect(device);
       if (_disposed || generation != _operation) return;
       state = LinkState.connected;
+      _reconnectAttempts = 0;
       try {
         await _transport!.sendPackets([clockSyncPacket(DateTime.now())]);
       } catch (e) {
@@ -193,7 +233,8 @@ class LumaController extends ChangeNotifier {
     } catch (e) {
       if (_disposed || generation != _operation) return;
       error = _friendly(e);
-      state = LinkState.error;
+      state = automatic ? LinkState.offline : LinkState.error;
+      if (automatic) _scheduleReconnect();
     }
     _emit();
   }
@@ -293,9 +334,11 @@ class LumaController extends ChangeNotifier {
 
   Future<void> disconnect() async {
     ++_operation;
+    _reconnectTimer?.cancel();
+    _reconnectAttempts = 0;
+    state = LinkState.idle;
     await _stopScan();
     await _transport?.disconnect();
-    state = LinkState.idle;
     devices.clear();
     selected = null;
     error = null;
@@ -354,6 +397,7 @@ class LumaController extends ChangeNotifier {
     _disposed = true;
     ++_operation;
     _scanTimer?.cancel();
+    _reconnectTimer?.cancel();
     unawaited(_scan?.cancel());
     unawaited(_connection?.cancel());
     unawaited(_transport?.dispose());
