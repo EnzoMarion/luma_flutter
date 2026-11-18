@@ -16,7 +16,7 @@ List<int> clockSyncPacket(DateTime now) {
 
 enum ScrollMode { auto, fixed, always, appearance }
 
-enum PanelAlphabet { latin, cyrillic, greek, hebrew, arabic, japanese, korean }
+enum PanelAlphabet { latin, cyrillic, greek, hebrew, japanese, korean }
 
 extension PanelAlphabetLabel on PanelAlphabet {
   String get label => switch (this) {
@@ -24,13 +24,11 @@ extension PanelAlphabetLabel on PanelAlphabet {
         PanelAlphabet.cyrillic => 'Cyrillique',
         PanelAlphabet.greek => 'Grec',
         PanelAlphabet.hebrew => 'Hébreu',
-        PanelAlphabet.arabic => 'Arabe',
         PanelAlphabet.japanese => 'Japonais',
         PanelAlphabet.korean => 'Coréen',
       };
   bool get usesRasterFont => index >= PanelAlphabet.hebrew.index;
-  bool get rightToLeft =>
-      this == PanelAlphabet.hebrew || this == PanelAlphabet.arabic;
+  bool get rightToLeft => this == PanelAlphabet.hebrew;
 }
 
 class PanelSettings {
@@ -149,9 +147,6 @@ bool requiresRasterFont(String text, PanelAlphabet alphabet) =>
 
 bool _scriptSupports(PanelAlphabet alphabet, int rune) => switch (alphabet) {
       PanelAlphabet.hebrew => rune >= 0x0590 && rune <= 0x05ff,
-      PanelAlphabet.arabic => (rune >= 0x0600 && rune <= 0x06ff) ||
-          (rune >= 0x0750 && rune <= 0x077f) ||
-          (rune >= 0x08a0 && rune <= 0x08ff),
       PanelAlphabet.japanese => (rune >= 0x3040 && rune <= 0x30ff) ||
           (rune >= 0x31f0 && rune <= 0x31ff) ||
           _han(rune) ||

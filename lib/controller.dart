@@ -49,12 +49,14 @@ class LumaController extends ChangeNotifier {
               (value) => value.name == savedAlphabetName,
               orElse: () => PanelAlphabet.latin,
             )
-          : legacyAlphabetIndex == 7
-              ? PanelAlphabet.korean
-              : legacyAlphabetIndex == 6
-                  ? PanelAlphabet.latin
-                  : PanelAlphabet.values[legacyAlphabetIndex.clamp(
-                      0, PanelAlphabet.values.length - 1)];
+          : switch (legacyAlphabetIndex) {
+              1 => PanelAlphabet.cyrillic,
+              2 => PanelAlphabet.greek,
+              3 => PanelAlphabet.hebrew,
+              5 => PanelAlphabet.japanese,
+              7 => PanelAlphabet.korean,
+              _ => PanelAlphabet.latin,
+            };
       settings = settings.copyWith(alphabet: alphabet);
       final saved = prefs.getStringList('favorites');
       if (saved != null)
@@ -64,7 +66,10 @@ class LumaController extends ChangeNotifier {
             .toSet()
             .take(20)
             .toList();
-      message = prefs.getString('luma.message') ?? message;
+      final savedMessage = prefs.getString('luma.message');
+      if (savedMessage != null && alphabetForMessage(savedMessage) != null) {
+        message = savedMessage;
+      }
       final brightness = prefs.getInt('luma.brightness') ?? settings.brightness;
       final speed = prefs.getInt('luma.speed') ?? settings.speedMs;
       final mode = prefs.getInt('luma.mode') ?? settings.mode.index;

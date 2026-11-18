@@ -101,7 +101,6 @@ class _LumaHomeState extends State<LumaHome> {
         PanelAlphabet.cyrillic => const Locale('ru'),
         PanelAlphabet.greek => const Locale('el'),
         PanelAlphabet.hebrew => const Locale('he'),
-        PanelAlphabet.arabic => const Locale('ar'),
         PanelAlphabet.japanese => const Locale('ja'),
         PanelAlphabet.korean => const Locale('ko'),
       };

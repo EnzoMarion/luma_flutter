@@ -6,7 +6,7 @@ Application de commande d'un panneau LED à matrices MAX7219 piloté par un ESP3
 
 - Recherche et connexion BLE, avec un mode démonstration sans panneau.
 - Messages fixes ou défilants, réglage de la vitesse et de la luminosité, pictogrammes, dessin, favoris et aperçu 32 × 8 pixels.
-- Alphabets latin, cyrillique, grec, hébreu, arabe, japonais et coréen dans les réglages. Un favori dans un autre alphabet peut être envoyé sans changer le réglage choisi.
+- Alphabets latin, cyrillique, grec, hébreu, japonais et coréen dans les réglages. Un favori dans un autre alphabet peut être envoyé sans changer le réglage choisi.
 - Clavier natif du téléphone. Sa langue dépend des claviers installés par l'utilisateur ; l'application ne peut pas forcer l'installation ni le changement de langue sur Android ou iOS.
 - Activités complémentaires dans `lib/activities.dart` : commandes programmées, météo, connexion OBD et visualisation audio. Leur disponibilité dépend du firmware et de la plateforme.
 

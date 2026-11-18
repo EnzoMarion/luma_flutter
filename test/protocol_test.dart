@@ -47,6 +47,13 @@ void main() {
     expect(validateMessage('A' * 61), isNotNull);
     expect(textColumns('E').first, 0xfe);
   });
+  test('arabe retiré, autres alphabets conservés', () {
+    expect(PanelAlphabet.values.map((value) => value.label),
+        ['Latin', 'Cyrillique', 'Grec', 'Hébreu', 'Japonais', 'Coréen']);
+    expect(alphabetForMessage('مرحبا'), isNull);
+    expect(alphabetForMessage('שלום'), PanelAlphabet.hebrew);
+    expect(alphabetForMessage('안녕하세요'), PanelAlphabet.korean);
+  });
   test('pictogrammes soleil et clin d’œil identiques à iOS', () {
     expect(pixelIcons[3].rows, [0x18, 0x5a, 0x3c, 0xff, 0xff, 0x3c, 0x5a, 0x18]);
     expect(pixelIcons[4].rows, [0x3c, 0x42, 0xad, 0x81, 0xa5, 0x99, 0x42, 0x3c]);

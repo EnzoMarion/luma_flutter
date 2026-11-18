@@ -4,6 +4,19 @@ import 'package:luma/controller.dart';
 import 'package:luma/protocol.dart';
 
 void main() {
+  test('anciens index et messages arabes sont migrés', () async {
+    SharedPreferences.setMockInitialValues({
+      'luma.alphabet': 5,
+      'luma.message': 'مرحبا',
+      'favorites': ['MERCI', 'مرحبا'],
+    });
+    final controller = LumaController();
+    await controller.loadFavorites();
+    expect(controller.settings.alphabet, PanelAlphabet.japanese);
+    expect(controller.message, 'MERCI');
+    expect(controller.favorites, ['MERCI']);
+    controller.dispose();
+  });
   test('restaure message, réglages et favoris', () async {
     SharedPreferences.setMockInitialValues({
       'luma.message': 'À BIENTÔT',
