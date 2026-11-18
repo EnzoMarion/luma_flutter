@@ -1,5 +1,19 @@
-const serviceUuid = '7A2F0007-CB86-4B6D-8F78-38D24B9E1940';
+const legacyServiceUuid = '7A2F0007-CB86-4B6D-8F78-38D24B9E1940';
+const rgbServiceUuid = '7A2F0008-CB86-4B6D-8F78-38D24B9E1940';
 const writeUuid = '7A2F0002-CB86-4B6D-8F78-38D24B9E1940';
+
+enum PanelHardware { max7219, ws2812b }
+
+extension PanelHardwareProtocol on PanelHardware {
+  String get serviceUuid =>
+      this == PanelHardware.ws2812b ? rgbServiceUuid : legacyServiceUuid;
+  int get maxColumns => this == PanelHardware.ws2812b ? 960 : 359;
+}
+
+const panelRgbColors = <(int, int, int)>[
+  (215, 255, 127), (238, 243, 235), (247, 188, 119),
+  (255, 53, 79), (98, 185, 232), (163, 77, 255),
+];
 
 List<int> clockSyncPacket(DateTime now) {
   final seconds =
@@ -32,7 +46,8 @@ extension PanelAlphabetLabel on PanelAlphabet {
 }
 
 class PanelSettings {
-  final int brightness; // Intensité MAX7219 : 0 à 15 (0 n'éteint pas).
+  final int brightness; // 0 à 15 ; converti en 0 à 100 pour le panneau RGB.
+  final int colorIndex;
   final int speedMs;
   final ScrollMode mode;
   final bool right;
@@ -40,6 +55,7 @@ class PanelSettings {
   final PanelAlphabet alphabet;
   const PanelSettings({
     this.brightness = 6,
+    this.colorIndex = 0,
     this.speedMs = 50,
     this.mode = ScrollMode.auto,
     this.right = false,
@@ -48,6 +64,7 @@ class PanelSettings {
   });
   PanelSettings copyWith({
     int? brightness,
+    int? colorIndex,
     int? speedMs,
     ScrollMode? mode,
     bool? right,
@@ -56,6 +73,7 @@ class PanelSettings {
   }) =>
       PanelSettings(
         brightness: brightness ?? this.brightness,
+        colorIndex: colorIndex ?? this.colorIndex,
         speedMs: speedMs ?? this.speedMs,
         mode: mode ?? this.mode,
         right: right ?? this.right,
@@ -63,7 +81,7 @@ class PanelSettings {
         alphabet: alphabet ?? this.alphabet,
       );
   String get payload =>
-      '$brightness:$speedMs:${mode.index}:${right ? 1 : 0}:${power ? 1 : 0}';
+      '$brightness:$speedMs:${mode.index}:${right ? 1 : 0}:${power ? 1 : 0}:$colorIndex';
 }
 
 String normalizeMessage(String text) {
@@ -169,12 +187,16 @@ bool _cjkPunctuation(int rune) =>
 
 List<List<int>> encodeRenderedText(
     List<int> columns, int speedMs, ScrollMode mode,
-    [List<List<int>> pages = const []]) {
+    [List<List<int>> pages = const [],
+    PanelHardware hardware = PanelHardware.max7219]) {
   if (mode == ScrollMode.fixed ||
       (mode == ScrollMode.auto && columns.length <= 32)) {
-    return _columnImagePackets(columns);
+    return [..._modeResetPackets(hardware), ..._columnImagePackets(columns)];
   }
   if (mode == ScrollMode.appearance) {
+    if (pages.isEmpty || pages.length > 30) {
+      throw ArgumentError('Nombre de pages invalide pour le panneau.');
+    }
     final joined = <int>[];
     for (final page in pages) {
       final shown = page.take(32).toList();
@@ -183,7 +205,7 @@ List<List<int>> encodeRenderedText(
       joined.addAll(shown);
       joined.addAll(List<int>.filled(32 - left - shown.length, 0));
     }
-    if (joined.length > 359) {
+    if (joined.length > hardware.maxColumns) {
       throw ArgumentError(
           'Message trop long pour le panneau en mode Apparition.');
     }
@@ -193,21 +215,36 @@ List<List<int>> encodeRenderedText(
       ..._scrollPackets(joined, speedMs)
     ];
   }
-  if (columns.length > 359) {
+  if (columns.length > hardware.maxColumns) {
     throw ArgumentError('Message trop long en pixels pour ce panneau.');
   }
-  return _scrollPackets(columns, speedMs);
+  return [..._modeResetPackets(hardware), ..._scrollPackets(columns, speedMs)];
 }
+
+List<List<int>> _modeResetPackets(PanelHardware hardware) =>
+    hardware == PanelHardware.ws2812b ? [[0x46, 0], [0x47, 0]] : [];
 
 List<List<int>> encodeCommand(String kind, int id,
     [String payload = '',
     int speedMs = 100,
     ScrollMode mode = ScrollMode.auto,
-    PanelAlphabet alphabet = PanelAlphabet.latin]) {
+    PanelAlphabet alphabet = PanelAlphabet.latin,
+    PanelHardware hardware = PanelHardware.max7219]) {
   if (kind == 'S') {
-    final brightness = int.tryParse(payload.split(':').first) ?? 0;
+    final parts = payload.split(':');
+    final brightness = int.tryParse(parts.first) ?? 0;
     if (brightness < 0 || brightness > 15)
       throw ArgumentError('Luminosité invalide');
+    if (hardware == PanelHardware.ws2812b) {
+      final colorIndex = parts.length > 5 ? int.tryParse(parts[5]) : 0;
+      if (colorIndex == null ||
+          colorIndex < 0 ||
+          colorIndex >= panelRgbColors.length) {
+        throw ArgumentError('Couleur invalide');
+      }
+      final rgb = panelRgbColors[colorIndex];
+      return [[0x0A, (brightness * 100 / 15).round(), rgb.$1, rgb.$2, rgb.$3]];
+    }
     return [
       [0x0A, brightness],
     ];
@@ -215,9 +252,12 @@ List<List<int>> encodeCommand(String kind, int id,
   if (kind == 'I') {
     final index = int.tryParse(payload) ?? 0;
     final rows = pixelIcons[index].rows;
-    return _imagePackets(rows);
+    return [..._modeResetPackets(hardware), ..._imagePackets(rows)];
   }
-  if (kind == 'C') return _imagePackets(const [0, 0, 0, 0, 0, 0, 0, 0]);
+  if (kind == 'C') return [
+    ..._modeResetPackets(hardware),
+    ..._imagePackets(const [0, 0, 0, 0, 0, 0, 0, 0]),
+  ];
   if (kind == 'D') {
     if (payload.length != 256 || payload.contains(RegExp(r'[^01]'))) {
       throw ArgumentError('Dessin invalide');
@@ -233,6 +273,7 @@ List<List<int>> encodeCommand(String kind, int id,
       }
     }
     return [
+      ..._modeResetPackets(hardware),
       [0x20, ...image.sublist(0, 16)],
       [0x21, ...image.sublist(16, 32)]
     ];
@@ -243,10 +284,10 @@ List<List<int>> encodeCommand(String kind, int id,
     final columns = _textColumns(payload, alphabet);
     if (mode == ScrollMode.fixed ||
         (mode == ScrollMode.auto && columns.length <= 32)) {
-      return _columnImagePackets(columns);
+      return [..._modeResetPackets(hardware), ..._columnImagePackets(columns)];
     }
     if (mode == ScrollMode.appearance) {
-      final pages = appearancePages(payload);
+      final pages = appearancePages(payload, alphabet);
       final pageColumns = <int>[];
       for (final page in pages) {
         final glyphs = _textColumns(page, alphabet);
@@ -255,13 +296,19 @@ List<List<int>> encodeCommand(String kind, int id,
         pageColumns.addAll(glyphs);
         pageColumns.addAll(List<int>.filled(32 - left - glyphs.length, 0));
       }
+      if (pageColumns.length > hardware.maxColumns || pages.length > 30) {
+        throw ArgumentError('Message trop long pour ce panneau.');
+      }
       return [
         [0x46, 0],
         [0x47, pages.length],
         ..._scrollPackets(pageColumns, speedMs)
       ];
     }
-    return _scrollPackets(columns, speedMs);
+    if (columns.length > hardware.maxColumns) {
+      throw ArgumentError('Message trop long en pixels pour ce panneau.');
+    }
+    return [..._modeResetPackets(hardware), ..._scrollPackets(columns, speedMs)];
   }
   throw ArgumentError('Commande inconnue pour ce firmware');
 }

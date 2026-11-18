@@ -145,6 +145,7 @@ class _LumaHomeState extends State<LumaHome> {
 
   Future<void> _setPreviewColor(int color) async {
     if (mounted) setState(() => selectedColor = color);
+    c.updateSettings(c.settings.copyWith(colorIndex: color));
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('luma.preview_color', color);
   }
@@ -594,7 +595,7 @@ class _LumaHomeState extends State<LumaHome> {
       ],
       _panelOption(
         title: 'Panneau Luma',
-        detail: '32 × 8 pixels · MAX7219',
+        detail: '32 × 8 pixels · RGB WS2812B ou MAX7219',
         badge: 'BLE',
         isColor: true,
         scanning: scanning || connecting,
@@ -620,7 +621,7 @@ class _LumaHomeState extends State<LumaHome> {
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.bluetooth, color: lime),
             title: Text(d.name),
-            subtitle: Text('${d.rssi} dBm · Toucher pour connecter',
+            subtitle: Text('${d.rssi} dBm · ${d.hardware == PanelHardware.ws2812b ? 'RGB' : 'MAX7219'} · Toucher pour connecter',
                 style: const TextStyle(color: muted, fontSize: 11)),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _connectDevice(d),
@@ -694,6 +695,10 @@ class _LumaHomeState extends State<LumaHome> {
 
   Future<void> _connectDevice(PanelDevice device) async {
     await c.connect(device);
+    if (mounted && c.connected) {
+      setState(() => colorPanel =
+          c.selected?.hardware == PanelHardware.ws2812b);
+    }
   }
 
   List<Widget> _content() {
@@ -1203,9 +1208,14 @@ class _LumaHomeState extends State<LumaHome> {
               ? null
               : (v) => c.updateSettings(c.settings.copyWith(power: v)),
         ),
-        const Text(
-            'Le panneau MAX7219 est monochrome : la couleur concerne uniquement l’aperçu.',
-            style: TextStyle(color: muted, fontSize: 10)),
+        if (!colorPanel)
+          const Text(
+              'Le panneau MAX7219 est monochrome : la couleur concerne uniquement l’aperçu.',
+              style: TextStyle(color: muted, fontSize: 10))
+        else
+          const Text(
+              'La couleur choisie est envoyée au panneau RGB avec la luminosité.',
+              style: TextStyle(color: muted, fontSize: 10)),
       ];
 
   Widget _modeButton(String label, ScrollMode mode) {

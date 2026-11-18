@@ -14,6 +14,7 @@ class BleTransport implements PanelTransport {
   final _connection = StreamController<bool>.broadcast();
   StreamSubscription<ConnectionStateUpdate>? _link;
   String? _device;
+  PanelHardware hardware = PanelHardware.max7219;
   bool _readyToWrite = false;
   bool _sending = false;
   bool _liveSending = false;
@@ -58,20 +59,23 @@ class BleTransport implements PanelTransport {
   Stream<PanelDevice> scan() async* {
     await _prepare();
     yield* _ble.scanForDevices(
-      withServices: [Uuid.parse(serviceUuid)],
+      withServices: [Uuid.parse(rgbServiceUuid), Uuid.parse(legacyServiceUuid)],
       scanMode: ScanMode.lowLatency,
     ).map(
       (d) => PanelDevice(
         d.id,
         d.name.isEmpty ? 'Panneau Luma' : d.name,
         d.rssi,
+        hardware: d.serviceUuids.contains(Uuid.parse(rgbServiceUuid))
+            ? PanelHardware.ws2812b
+            : PanelHardware.max7219,
       ),
     );
   }
 
   QualifiedCharacteristic _characteristic(String uuid) =>
       QualifiedCharacteristic(
-        serviceId: Uuid.parse(serviceUuid),
+        serviceId: Uuid.parse(hardware.serviceUuid),
         characteristicId: Uuid.parse(uuid),
         deviceId: _device!,
       );
@@ -82,6 +86,7 @@ class BleTransport implements PanelTransport {
     await _prepare();
     final ready = Completer<void>();
     _device = device.id;
+    hardware = device.hardware;
     _readyToWrite = false;
     _link = _ble
         .connectToDevice(
@@ -113,19 +118,19 @@ class BleTransport implements PanelTransport {
     try {
       await ready.future.timeout(const Duration(seconds: 15));
       final services = await _ble.discoverServices(device.id);
-      final valid = services.any(
-        (s) =>
-            s.serviceId == Uuid.parse(serviceUuid) &&
-            s.characteristics.any(
-              (c) =>
-                  c.characteristicId == Uuid.parse(writeUuid) &&
-                  c.isWritableWithResponse,
-            ),
-      );
-      if (!valid)
+      final supported = services.where((s) =>
+          (s.serviceId == Uuid.parse(rgbServiceUuid) ||
+              s.serviceId == Uuid.parse(legacyServiceUuid)) &&
+          s.characteristics.any((c) =>
+              c.characteristicId == Uuid.parse(writeUuid) &&
+              c.isWritableWithResponse));
+      if (supported.isEmpty)
         throw StateError(
           'Service BLE ou écriture avec réponse absente. Vérifiez le firmware du panneau.',
         );
+      hardware = supported.any((s) => s.serviceId == Uuid.parse(rgbServiceUuid))
+          ? PanelHardware.ws2812b
+          : PanelHardware.max7219;
       if (_device != device.id) {
         throw StateError('Connexion interrompue pendant la découverte BLE.');
       }
@@ -201,9 +206,9 @@ class BleTransport implements PanelTransport {
           ? await Future.wait(appearancePages(payload, alphabet)
               .map((page) => rasterTextColumns(page, alphabet)))
           : <List<int>>[];
-      chunks = encodeRenderedText(columns, speedMs, mode, pages);
+      chunks = encodeRenderedText(columns, speedMs, mode, pages, hardware);
     } else {
-      chunks = encodeCommand(kind, 1, payload, speedMs, mode, alphabet);
+      chunks = encodeCommand(kind, 1, payload, speedMs, mode, alphabet, hardware);
     }
     await sendPackets(chunks);
   }

@@ -3,7 +3,9 @@
 Mise à jour du 18 novembre 2026.
 
 - Les tests Flutter couvrent désormais la reconnexion après coupure, sa limite de trois essais, l'annulation après déconnexion volontaire, ainsi que les libellés et dimensions des touches de couleur.
-- `flutter test --no-pub` : 15 tests réussis. `flutter build apk --debug --no-pub` : APK Android compilé avec succès.
+- Les tests du protocole vérifient les commandes distinctes du MAX7219 et du WS2812B RGB, la couleur, la luminosité et la capacité de défilement du nouveau firmware.
+- `flutter test --no-pub` : 16 tests réussis. `flutter build apk --debug --no-pub` : APK Android compilé avec succès après l'adaptation RGB.
+- La connexion et le rendu du nouveau panneau RGB doivent encore être essayés avec le matériel ; la compilation seule ne valide pas l'ordre physique des LED.
 - Le comportement BLE réel après coupure et l'annonce TalkBack/VoiceOver restent à vérifier sur téléphone avec le panneau ; les tests utilisent un transport simulé.
 - `flutter analyze --no-pub --no-fatal-infos --no-fatal-warnings lib test` ne relève aucune erreur bloquante dans les sources de l'application. Il reste 21 remarques de style ou avertissements. L'analyse globale échoue sur des tests incompatibles du code tiers dans `vendor/reactive_ble_mobile`.
 - L'application Android a été compilée et lancée sur le téléphone Xiaomi de développement lors des itérations précédentes.

@@ -1,12 +1,13 @@
 # Luma — application Flutter
 
-Application de commande d'un panneau LED à matrices MAX7219 piloté par un ESP32 en Bluetooth Low Energy (BLE). Le même code Flutter est prévu pour Android et iOS.
+Application de commande d'un panneau LED 32 × 8 piloté par un ESP32 en Bluetooth Low Energy (BLE). Elle reconnaît l'ancien panneau MAX7219 rouge et le nouveau panneau RGB WS2812B. Le même code Flutter est prévu pour Android et iOS.
 
 ## Fonctionnalités
 
 - Recherche et connexion BLE, avec un mode démonstration sans panneau.
 - Après une coupure BLE, trois tentatives de reconnexion espacées sont effectuées ; un bouton permet aussi de réessayer immédiatement. Une déconnexion volontaire annule ces tentatives.
 - Messages fixes ou défilants, réglage de la vitesse et de la luminosité, pictogrammes, dessin, favoris et aperçu 32 × 8 pixels.
+- Le panneau RGB reçoit les six couleurs de l'aperçu et une luminosité convertie sur 100 niveaux ; le MAX7219 conserve son réglage sur 16 niveaux.
 - Alphabets latin, cyrillique, grec, hébreu, japonais et coréen dans les réglages. Un favori dans un autre alphabet peut être envoyé sans changer le réglage choisi.
 - Clavier natif du téléphone. Sa langue dépend des claviers installés par l'utilisateur ; l'application ne peut pas forcer l'installation ni le changement de langue sur Android ou iOS.
 - Activités complémentaires dans `lib/activities.dart` : commandes programmées, météo, connexion OBD et visualisation audio. Leur disponibilité dépend du firmware et de la plateforme.
@@ -53,6 +54,6 @@ Configurez l'équipe de signature dans Xcode et utilisez un iPhone pour tester l
 | `lib/activities.dart` | Activités complémentaires |
 | `test/` | Tests du protocole, du contrôleur et de l'interface |
 
-Le code Bluetooth cible le service `7A2F0007-CB86-4B6D-8F78-38D24B9E1940` et la caractéristique d'écriture `7A2F0002-CB86-4B6D-8F78-38D24B9E1940`. À la connexion, l'app vérifie que la caractéristique accepte les écritures avec réponse. Cette vérification ne constitue pas une identification de version du firmware. Une écriture BLE réussie confirme le transfert GATT, pas l'affichage effectif sur les LED : le firmware actuel n'expose pas de confirmation applicative. Vérifiez donc que le firmware comprend les commandes de `lib/protocol.dart` avant un essai matériel. Le sketch local `firmware/Luma_ESP32_C3.ino` est un ancien essai avec un autre UUID de service ; il n'est pas inclus dans cette mise à jour.
+Le code Bluetooth reconnaît le service `7A2F0007-CB86-4B6D-8F78-38D24B9E1940` (ancien MAX7219) et le service `7A2F0008-CB86-4B6D-8F78-38D24B9E1940` (nouveau RGB), avec la même caractéristique d'écriture `7A2F0002-CB86-4B6D-8F78-38D24B9E1940`. Le type est vérifié par la découverte GATT après connexion. Le profil RGB utilise les commandes du [firmware Arduino de l'équipe](https://github.com/JeremDevX/luma-arduino). Une écriture BLE réussie confirme le transfert GATT, pas l'affichage effectif sur les LED : le firmware n'expose pas de confirmation applicative. Le sketch local `firmware/Luma_ESP32_C3.ino` est un ancien essai avec un autre UUID de service ; il n'est pas inclus dans cette mise à jour.
 
 Voir [VALIDATION.md](VALIDATION.md) pour les vérifications et les limites connues.

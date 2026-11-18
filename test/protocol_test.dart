@@ -4,6 +4,22 @@ import 'package:luma/transport.dart';
 import 'package:luma/activities.dart';
 
 void main() {
+  test('nouveau panneau RGB et ancien panneau rouge ont des paquets distincts', () {
+    expect(rgbServiceUuid, '7A2F0008-CB86-4B6D-8F78-38D24B9E1940');
+    expect(legacyServiceUuid, '7A2F0007-CB86-4B6D-8F78-38D24B9E1940');
+    expect(encodeCommand('S', 1, '6:50:0:0:1:3', 50, ScrollMode.auto,
+        PanelAlphabet.latin, PanelHardware.ws2812b), [[0x0a, 40, 255, 53, 79]]);
+    expect(encodeCommand('S', 1, '6:50:0:0:1:3'), [[0x0a, 6]]);
+    final fixedRgb = encodeCommand('T', 1, 'E', 50, ScrollMode.fixed,
+        PanelAlphabet.latin, PanelHardware.ws2812b);
+    expect(fixedRgb.take(2).toList(), [[0x46, 0], [0x47, 0]]);
+    expect(fixedRgb.skip(2).map((p) => p.first), [0x20, 0x21]);
+    final longColumns = List<int>.filled(500, 0x80);
+    expect(encodeRenderedText(longColumns, 50, ScrollMode.always, const [],
+        PanelHardware.ws2812b).last, [0x32]);
+    expect(() => encodeRenderedText(longColumns, 50, ScrollMode.always),
+        throwsArgumentError);
+  });
   test('commandes horloge et minuteur du firmware récent', () {
     expect(modePacket(3, 300), [0x40, 3, 44, 1, 0, 0]);
     expect(modePacket(1), [0x40, 1, 0, 0, 0, 0]);

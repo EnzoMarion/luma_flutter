@@ -37,7 +37,7 @@ void main() {
     await tester.tap(demo);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 700));
-    final device = find.text('Luma rouge · Démonstration');
+    final device = find.text('Luma RGB · Démonstration');
     expect(device, findsOneWidget);
     await tester.ensureVisible(device);
     await tester.pump();

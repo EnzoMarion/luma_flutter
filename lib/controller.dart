@@ -42,6 +42,10 @@ class LumaController extends ChangeNotifier {
   String? _displayedKind;
   String _displayedPayload = '';
   bool get connected => state == LinkState.connected;
+  PanelHardware get hardware => selected?.hardware ?? PanelHardware.max7219;
+  List<int> get settingsPacket =>
+      encodeCommand('S', 1, settings.payload, settings.speedMs,
+          settings.mode, settings.alphabet, hardware).single;
   int get reconnectAttempts => _reconnectAttempts;
   void _emit() {
     if (!_disposed) notifyListeners();
@@ -85,6 +89,8 @@ class LumaController extends ChangeNotifier {
           (prefs.getInt('luma.icon') ?? icon).clamp(0, pixelIcons.length - 1);
       settings = settings.copyWith(
         brightness: brightness.clamp(0, 15),
+        colorIndex: (prefs.getInt('luma.preview_color') ?? 0)
+            .clamp(0, panelRgbColors.length - 1),
         speedMs: speed.clamp(20, 200),
         mode: ScrollMode.values[mode.clamp(0, ScrollMode.values.length - 1)],
         power: prefs.getBool('luma.power') ?? true,
@@ -222,6 +228,10 @@ class LumaController extends ChangeNotifier {
     try {
       await _transport!.connect(device);
       if (_disposed || generation != _operation) return;
+      if (_transport case BleTransport ble) {
+        selected = PanelDevice(device.id, device.name, device.rssi,
+            hardware: ble.hardware);
+      }
       state = LinkState.connected;
       _reconnectAttempts = 0;
       try {
@@ -251,7 +261,7 @@ class LumaController extends ChangeNotifier {
             : settings.brightness;
         await _transport!.send(
             'S',
-            '$brightness:${settings.speedMs}:${settings.mode.index}:0:1',
+            '$brightness:${settings.speedMs}:${settings.mode.index}:0:1:${settings.colorIndex}',
             settings.speedMs,
             settings.mode,
             settings.alphabet);
@@ -259,7 +269,7 @@ class LumaController extends ChangeNotifier {
         unawaited(_saveDraft());
       }
       final effectivePayload = kind == 'S' && !settings.power
-          ? '0:${settings.speedMs}:${settings.mode.index}:0:0'
+          ? '0:${settings.speedMs}:${settings.mode.index}:0:0:${settings.colorIndex}'
           : payload;
       await _transport!.send(
           kind,
@@ -270,7 +280,7 @@ class LumaController extends ChangeNotifier {
       if (kind == 'C') {
         await _transport!.send(
             'S',
-            '0:${settings.speedMs}:${settings.mode.index}:0:0',
+            '0:${settings.speedMs}:${settings.mode.index}:0:0:${settings.colorIndex}',
             settings.speedMs,
             settings.mode,
             settings.alphabet);

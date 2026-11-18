@@ -97,7 +97,10 @@ class _ActivitiesPageState extends State<ActivitiesPage> with WidgetsBindingObse
   Future<void> send(List<List<int>> packets, {String label = 'Commande'}) async {
     if (sending) return;
     setState(() => sending = true);
-    final success = await widget.controller.sendPackets(packets);
+    final commandPackets = packets.any((packet) => packet.isNotEmpty && packet.first == 0x40)
+        ? [widget.controller.settingsPacket, ...packets]
+        : packets;
+    final success = await widget.controller.sendPackets(commandPackets);
     if (!mounted) return;
     setState(() => sending = false);
     await showDialog<void>(context: context, builder: (ctx) => AlertDialog(
@@ -146,8 +149,9 @@ class _ActivitiesPageState extends State<ActivitiesPage> with WidgetsBindingObse
         71 || 73 || 75 || 77 || 85 || 86 => 'NEIGE', 95 || 96 || 99 => 'ORAGE', _ => 'METEO',
       };
       final text = 'GRENOBLE ${temp}C $condition';
-      final content = encodeCommand('T', 1, text, widget.controller.settings.speedMs, ScrollMode.appearance);
-      final packets = [[0x0A, widget.controller.settings.brightness], ...content];
+      final content = encodeCommand('T', 1, text, widget.controller.settings.speedMs,
+          ScrollMode.appearance, PanelAlphabet.latin, widget.controller.hardware);
+      final packets = [widget.controller.settingsPacket, ...content];
       final ok = await widget.controller.sendPackets(packets);
       if (!mounted) return;
       setState(() => weatherState = ok ? text : 'Envoi au panneau impossible.');
@@ -181,7 +185,7 @@ class _ActivitiesPageState extends State<ActivitiesPage> with WidgetsBindingObse
         socket.write(command); await socket.flush(); await _readPrompt(obdInput!);
       }
       socket.write('010C\r'); await socket.flush(); await _readPrompt(obdInput!);
-      final ok = await widget.controller.sendPackets([[0x61, 1]]);
+      final ok = await widget.controller.sendPackets([widget.controller.settingsPacket, [0x61, 1]]);
       if (!ok) throw StateError(widget.controller.error ?? 'Activation Bluetooth impossible.');
       if (!mounted) return;
       setState(() { obdActive = true; obdState = 'En attente des données'; });
@@ -226,7 +230,7 @@ class _ActivitiesPageState extends State<ActivitiesPage> with WidgetsBindingObse
     await _stopObd();
     final permission = await Permission.microphone.request();
     if (!permission.isGranted) { _message('Autorise le microphone dans les réglages Android pour utiliser le visualiseur.'); return; }
-    final ok = await widget.controller.sendPackets([[0x51, 1]]);
+    final ok = await widget.controller.sendPackets([widget.controller.settingsPacket, [0x51, 1]]);
     if (!ok) { _message(widget.controller.error ?? 'Connecte le panneau puis réessaie.'); return; }
     try {
       await _audio.invokeMethod<void>('start');
