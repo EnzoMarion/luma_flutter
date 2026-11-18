@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'protocol.dart';
+import 'raster_font.dart';
 
 class PanelDevice {
   final String id;
@@ -13,7 +14,13 @@ abstract class PanelTransport {
   Stream<PanelDevice> scan();
   Stream<bool> get connection;
   Future<void> connect(PanelDevice device);
-  Future<void> send(String kind, [String payload = '']);
+  Future<void> send(String kind,
+      [String payload = '',
+      int speedMs = 100,
+      ScrollMode mode = ScrollMode.auto,
+      PanelAlphabet alphabet = PanelAlphabet.latin]);
+  Future<void> sendPackets(List<List<int>> packets);
+  Future<void> sendLive(List<int> packet);
   Future<void> disconnect();
   Future<void> dispose();
 }
@@ -22,6 +29,18 @@ class DemoTransport implements PanelTransport {
   final _connection = StreamController<bool>.broadcast();
   bool _connected = false;
   final List<String> commands = [];
+  @override
+  Future<void> sendLive(List<int> packet) async {
+    if (!_connected) throw StateError('Panneau déconnecté');
+    commands.add('live:${packet.first}:${packet.length}');
+  }
+
+  @override
+  Future<void> sendPackets(List<List<int>> packets) async {
+    if (!_connected) throw StateError('Panneau déconnecté');
+    commands.add('paquets:${packets.length}');
+  }
+
   @override
   Stream<bool> get connection => _connection.stream;
   @override
@@ -38,9 +57,24 @@ class DemoTransport implements PanelTransport {
   }
 
   @override
-  Future<void> send(String kind, [String payload = '']) async {
+  Future<void> send(String kind,
+      [String payload = '',
+      int speedMs = 100,
+      ScrollMode mode = ScrollMode.auto,
+      PanelAlphabet alphabet = PanelAlphabet.latin]) async {
     if (!_connected) throw StateError('Panneau déconnecté');
-    encodeCommand(kind, 1, payload);
+    if (kind == 'T' && requiresRasterFont(payload, alphabet)) {
+      final error = validateMessage(payload, alphabet);
+      if (error != null) throw ArgumentError(error);
+      final columns = await rasterTextColumns(payload, alphabet);
+      final pages = mode == ScrollMode.appearance
+          ? await Future.wait(appearancePages(payload, alphabet)
+              .map((page) => rasterTextColumns(page, alphabet)))
+          : <List<int>>[];
+      encodeRenderedText(columns, speedMs, mode, pages);
+    } else {
+      encodeCommand(kind, 1, payload, speedMs, mode, alphabet);
+    }
     await Future<void>.delayed(const Duration(milliseconds: 120));
     commands.add('$kind:$payload');
   }

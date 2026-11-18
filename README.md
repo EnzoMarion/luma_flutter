@@ -1,101 +1,56 @@
-# Luma · Application Flutter et panneau LED
+# Luma — application Flutter
 
-Prototype pour **Android et iOS**, adapté aux parcours couleur, rouge et réglages de la maquette [Projet LED IoT](https://www.figma.com/design/GhrvxUS2ZNhR30qS5GcRi5/Projet-LED-IoT?node-id=13-415).
+Application de commande d'un panneau LED à matrices MAX7219 piloté par un ESP32 en Bluetooth Low Energy (BLE). Le même code Flutter est prévu pour Android et iOS.
 
-## Ce qui est livré
+## Fonctionnalités
 
-- Application Flutter en français : connexion, choix des profils RGB/rouge, états de connexion, message et palette couleur, six pictogrammes, réglages, effacement et confirmations.
-- Mode démonstration clairement identifié, sans émission Bluetooth.
-- Aperçu de la matrice et couleurs sélectionnées, texte ASCII jusqu'à 60 caractères.
-- Luminosité sur 16 niveaux, défilement automatique/fixe/permanent, trois vitesses, deux sens, allumage et effacement.
-- Transport BLE Android/iOS avec fragments de 20 octets, commandes sérialisées et confirmation du firmware.
-- Firmware ESP32-WROOM-32 pour MAX7219 rouge ou WS2812B RGB 8 × 8, configuration PlatformIO et test Arduino minimal.
-- Police Manrope embarquée, utilisable hors ligne, licence dans `assets/fonts/OFL.txt`.
+- Recherche et connexion BLE, avec un mode démonstration sans panneau.
+- Messages fixes ou défilants, réglage de la vitesse et de la luminosité, pictogrammes, dessin, favoris et aperçu 32 × 8 pixels.
+- Alphabets latin, cyrillique, grec, hébreu, arabe, japonais et coréen dans les réglages. Un favori dans un autre alphabet peut être envoyé sans changer le réglage choisi.
+- Clavier natif du téléphone. Sa langue dépend des claviers installés par l'utilisateur ; l'application ne peut pas forcer l'installation ni le changement de langue sur Android ou iOS.
+- Activités complémentaires dans `lib/activities.dart` : commandes programmées, météo, connexion OBD et visualisation audio. Leur disponibilité dépend du firmware et de la plateforme.
 
-**État réel de validation :** la base du prototype a fait l'objet de contrôles Dart et de tests autonomes du protocole. Les parcours Figma et le profil WS2812B ont été ajoutés ensuite sans compilation ni exécution ; Flutter n'a pas pu être téléchargé dans l'environnement de création. Les dossiers Android/iOS/web sont donc **à générer avec le script fourni** ; aucune compilation Flutter, APK, IPA, exécution visuelle Flutter ou validation matérielle n'est certifiée. Voir [VALIDATION.md](VALIDATION.md).
+L'écran physique n'a que 8 lignes. Les caractères non latins complexes sont convertis en pixels sur le téléphone ; leur lisibilité varie selon le glyphe et la matrice.
 
-La reproduction est faite par inspection visuelle de Figma ; les détails de style peuvent différer. Les deux profils matériels sont disponibles dans l'application. Le firmware est compilé pour le profil rouge par défaut ; passez `LUMA_PANEL_COLOR` à `1` pour le WS2812B RGB.
+## Lancer sur Android
 
-## Démarrer sur votre Windows avec Android Studio
-
-1. Installez le [SDK Flutter stable](https://docs.flutter.dev/install/manual), ainsi que les plugins **Flutter** et **Dart** d'Android Studio. Android Studio seul ne fournit pas le SDK Flutter.
-2. Ajoutez `flutter/bin` à votre PATH et ouvrez un nouveau terminal.
-3. Extrayez l'archive dans un chemin court, par exemple `C:\dev\luma_flutter`.
-4. Depuis ce dossier, exécutez :
+Installez Flutter et Android Studio, branchez un téléphone avec le débogage USB autorisé, puis ouvrez le dossier contenant `pubspec.yaml` :
 
 ```powershell
 flutter doctor
-dart tool/setup.dart
-flutter analyze
-flutter test
+flutter pub get
+flutter devices
 flutter run
 ```
 
-Le script crée les projets natifs officiels à partir de **votre version de Flutter**, conserve les fichiers Dart de l'application et configure les déclarations Bluetooth Android/iOS. Il ne remplace pas les dossiers de plateformes déjà existants. L'identifiant de départ est `fr.projetled.luma`.
+Pour produire un APK de test : `flutter build apk --debug`. Les avertissements relatifs au Kotlin Gradle Plugin proviennent de dépendances actuelles et ne bloquent pas forcément la compilation.
 
-Ouvrez **le dossier luma_flutter qui contient pubspec.yaml** dans Android Studio, puis sélectionnez votre téléphone Android. Activez le débogage USB pour les tests par câble et acceptez sa demande de connexion. Utilisez le bouton « Essayer sans panneau · Démonstration » pour découvrir les écrans sans ESP32. Après la recherche simulée, touchez le panneau de démonstration proposé.
+## Lancer sur iOS
 
-Les tests BLE réels se font sur un téléphone. L'émulateur sert à vérifier l'interface. Si Android Studio ne reconnaît pas Flutter, renseignez le chemin du SDK dans ses réglages Flutter.
-
-Après validation, un APK de test peut être créé avec `flutter build apk --debug`. Une version de distribution exige votre configuration de signature.
-
-## Votre collègue sur Mac avec Xcode
-
-Votre collègue utilise **le même projet Dart**, avec Flutter installé en plus de Xcode. Partagez le dossier du projet via votre dépôt Git ou cette archive ; utilisez la même version de Flutter et conservez `pubspec.lock` une fois les dépendances résolues.
+Sur un Mac équipé de Flutter, Xcode et CocoaPods :
 
 ```sh
-flutter doctor
-dart tool/setup.dart
-flutter analyze
-flutter test
+flutter pub get
 flutter run
 ```
 
-Branchez un iPhone. Dans `ios/Runner.xcworkspace`, choisissez une équipe dans **Signing & Capabilities**, adaptez au besoin l'identifiant de bundle, puis activez le mode développeur de l'iPhone. Suivez les éventuels prérequis indiqués par `flutter doctor`, notamment CocoaPods si votre configuration le requiert. Ne lancez pas seulement les fichiers Dart dans Xcode : Flutter construit l'application, Xcode gère la partie iOS et la signature.
+Configurez l'équipe de signature dans Xcode et utilisez un iPhone pour tester le BLE. La partie iOS n'a pas été compilée ni testée dans l'environnement Windows de ce dépôt. Les fonctions propres à Android, notamment la capture audio via le canal natif, nécessitent une implémentation iOS avant usage.
 
-La compilation iOS se fait sur le Mac. [Guide Flutter officiel iOS](https://docs.flutter.dev/platform-integration/ios/setup).
+## Code
 
-## Architecture
-
-| Fichier/dossier | Responsabilité |
+| Chemin | Rôle |
 |---|---|
-| `lib/main.dart` | Écrans, thème, navigation et interactions |
-| `lib/controller.dart` | Recherche, connexion, favoris et état de l'application |
-| `lib/transport.dart` | Contrat de transport et simulation |
-| `lib/ble_transport.dart` | Permissions, GATT, fragmentation et confirmations |
-| `lib/protocol.dart` | UUID, validation, réglages et bitmaps |
-| `lib/pixel_preview.dart` | Rendu local des LED |
-| `firmware/src/` | Programme ESP32 : BLE, affichage et boucle principale séparés |
-| `tool/setup.dart` | Génération Android/iOS/web et déclarations Bluetooth |
-| `test/` | Tests Flutter du protocole et du parcours de démonstration |
+| `lib/main.dart` | Écrans et navigation |
+| `lib/controller.dart` | État, connexion et favoris |
+| `lib/protocol.dart` | Paquets BLE, glyphes et validation des messages |
+| `lib/raster_font.dart` | Conversion des écritures complexes en colonnes LED |
+| `lib/ble_transport.dart` | Transport BLE réel |
+| `lib/transport.dart` | Interface de transport et démonstration |
+| `lib/pixel_preview.dart` | Aperçu de la matrice |
+| `lib/drawing_editor.dart` | Éditeur de dessin |
+| `lib/activities.dart` | Activités complémentaires |
+| `test/` | Tests du protocole, du contrôleur et de l'interface |
 
-## Premier essai avec l'ESP32
+Le code Bluetooth cible le service `7A2F0007-CB86-4B6D-8F78-38D24B9E1940` et la caractéristique d'écriture `7A2F0002-CB86-4B6D-8F78-38D24B9E1940`. Vérifiez que le firmware installé sur l'ESP32 utilise ces identifiants et comprend les commandes de `lib/protocol.dart` avant un essai matériel. Le sketch local `firmware/Luma_ESP32_C3.ino` est un ancien essai avec un autre UUID de service ; il n'est pas inclus dans cette mise à jour.
 
-1. Vérifiez le câblage et testez une seule matrice avec `firmware/minimal/MatrixTest.ino`. Arduino IDE doit placer ce sketch dans un dossier nommé `MatrixTest` lorsqu'il le propose. Installez MD_Parola et MD_MAX72XX, et sélectionnez ESP32 Dev Module avec Arduino-ESP32 2.0.17.
-2. Pour le programme complet, ouvrez `firmware/` comme projet PlatformIO. Il cible explicitement Arduino-ESP32 2.x via la plateforme épinglée ; ne migrez pas vers 3.x sans adapter et revalider les API BLE.
-3. Profil rouge : ajustez `MODULES` à 1, puis 8 dans `firmware/include/config.h`. Le type `FC16_HW` est une hypothèse à confirmer. Profil couleur : gardez `RGB_WIDTH`/`RGB_HEIGHT` à 8 et branchez DIN sur GPIO4 ; dans `firmware/platformio.ini`, réglez `-DLUMA_PANEL_COLOR=1`.
-4. Compilez et téléversez : `pio run`, puis `pio run --target upload`. Ouvrez le port série à 115200 bauds avec `pio device monitor`.
-5. L'écran affiche `MERCI` au démarrage ; `Luma rouge` ou `Luma couleur` devient visible en BLE selon le profil.
-6. Dans l'application, « Connecter le panneau », puis touchez le périphérique détecté. Envoyez `BONJOUR`, puis un texte de plus de 10 caractères.
-7. Vérifiez un pictogramme, les deux sens, l'intensité, l'extinction, le rallumage et l'effacement.
-
-Le firmware ne dépend pas de Wi-Fi ni d'un serveur. La reconnexion est manuelle : après une coupure, relancez la recherche. Le texte saisi est conservé pendant la session, les favoris persistent entre lancements. Les réglages et le dernier message du panneau ne sont pas sauvegardés dans sa mémoire flash.
-
-## Limites connues
-
-- Les réglages montrés sont des valeurs à appliquer, pas une lecture de l'état physique du panneau. Après reconnexion, appuyez sur « Appliquer les réglages » pour les synchroniser.
-- « Message reçu » signifie que le firmware a accepté et appliqué la commande. Si le panneau est éteint dans les réglages, il faut le rallumer pour voir le contenu.
-- L'aperçu utilise une petite police 5 × 7 ; le panneau utilise la police MD_Parola. Les glyphes/largeurs peuvent différer. Certaines ponctuations apparaissent comme `?` dans l'aperçu mais sont transmises en ASCII au panneau. Les lettres sont prévisualisées en majuscules.
-- En mode fixe, un texte dépassant la largeur peut être tronqué. L'auto se déclenche selon le seuil de 10 caractères de la maquette, pas selon la largeur réelle de chaque glyphe.
-- La pause de l'aperçu concerne uniquement l'animation du téléphone.
-- Prototype BLE sans appairage sécurisé ni authentification : un autre téléphone proche connaissant le protocole peut commander un panneau libre. À renforcer avant un usage hors démonstration.
-- Le contrôle BLE est au premier plan ; le fonctionnement en arrière-plan n'est pas implémenté.
-
-## Sources techniques
-
-- [Flutter : installation](https://docs.flutter.dev/install/manual)
-- [Flutter Reactive BLE : permissions et API](https://pub.dev/packages/flutter_reactive_ble)
-- [permission_handler](https://pub.dev/packages/permission_handler)
-- [MD_Parola](https://github.com/MajicDesigns/MD_Parola)
-- [ESP32 Arduino BLE 2.0.17](https://github.com/espressif/arduino-esp32/tree/2.0.17/libraries/BLE)
-- [Manrope — Google Fonts](https://github.com/google/fonts/tree/main/ofl/manrope)
+Voir [VALIDATION.md](VALIDATION.md) pour les vérifications et les limites connues.

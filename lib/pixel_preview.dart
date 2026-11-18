@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'protocol.dart';
+import 'raster_font.dart';
 
 // Police de prévisualisation 5 × 7. Le firmware MD_Parola possède sa propre police.
 const _font = <String, List<int>>{
@@ -59,6 +62,7 @@ class PixelPreview extends StatefulWidget {
   final bool paused;
   final Color foreground;
   final int columns;
+  final String? drawing;
   const PixelPreview({
     super.key,
     this.text = 'MERCI',
@@ -67,61 +71,144 @@ class PixelPreview extends StatefulWidget {
     this.paused = false,
     this.foreground = const Color(0xffd7ff7f),
     this.columns = 64,
+    this.drawing,
   });
   @override
   State<PixelPreview> createState() => _PixelPreviewState();
 }
 
 class _PixelPreviewState extends State<PixelPreview>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+  bool _reducedMotion = false;
+  bool _appActive = true;
+  List<int>? _renderedColumns;
+  List<List<int>>? _renderedPages;
+  int _renderGeneration = 0;
   late final AnimationController _clock = AnimationController(
     vsync: this,
     duration: const Duration(seconds: 120),
-  )..repeat();
+  );
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _appActive = WidgetsBinding.instance.lifecycleState == null ||
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    unawaited(_loadRaster());
+  }
+
+  Future<void> _loadRaster() async {
+    final generation = ++_renderGeneration;
+    _renderedColumns = null;
+    _renderedPages = null;
+    if (!requiresRasterFont(widget.text, widget.settings.alphabet) ||
+        widget.icon != null ||
+        widget.drawing != null ||
+        widget.text.isEmpty) return;
+    try {
+      final full =
+          await rasterTextColumns(widget.text, widget.settings.alphabet);
+      final pages = await Future.wait(appearancePages(
+              widget.text, widget.settings.alphabet)
+          .map((page) => rasterTextColumns(page, widget.settings.alphabet)));
+      if (!mounted || generation != _renderGeneration) return;
+      setState(() {
+        _renderedColumns = full;
+        _renderedPages = pages;
+      });
+      _syncAnimation();
+    } catch (_) {
+      // Validation displays unsupported characters; the preview stays blank.
+    }
+  }
+
+  void _syncAnimation() {
+    final width = _renderedColumns?.length ??
+        textColumns(widget.text, widget.settings.alphabet).length;
+    final shouldMove = widget.settings.mode == ScrollMode.always ||
+        (widget.settings.mode == ScrollMode.auto && width > widget.columns) ||
+        widget.settings.mode == ScrollMode.appearance;
+    final animate = !widget.paused &&
+        !_reducedMotion &&
+        _appActive &&
+        widget.icon == null &&
+        widget.drawing == null &&
+        shouldMove;
+    if (animate && !_clock.isAnimating) _clock.repeat();
+    if (!animate && _clock.isAnimating) _clock.stop();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _reducedMotion = MediaQuery.disableAnimationsOf(context);
+    _syncAnimation();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _appActive = state == AppLifecycleState.resumed;
+    _syncAnimation();
+  }
+
   @override
   void didUpdateWidget(covariant PixelPreview oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.paused && !oldWidget.paused) _clock.stop();
-    if (!widget.paused && oldWidget.paused) _clock.repeat();
+    if (oldWidget.text != widget.text ||
+        oldWidget.settings.alphabet != widget.settings.alphabet ||
+        oldWidget.icon != widget.icon ||
+        oldWidget.drawing != widget.drawing) {
+      unawaited(_loadRaster());
+    }
+    _syncAnimation();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _clock.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) => Semantics(
-    label: widget.icon == null
-        ? 'Aperçu du message ${widget.text}'
-        : 'Pictogramme ${widget.icon!.label}',
-    child: AspectRatio(
-      aspectRatio: widget.columns / 8,
-      child: AnimatedBuilder(
-        animation: _clock,
-        builder: (context, child) {
-          final scrolling =
-              widget.icon == null &&
-              (widget.settings.mode == ScrollMode.always ||
-                  (widget.settings.mode == ScrollMode.auto &&
-                      widget.text.length * 6 > widget.columns));
-          final step = (_clock.value * 120000 / widget.settings.speedMs)
-              .floor();
-          return CustomPaint(
-            painter: MatrixPainter(
-              widget.text,
-              widget.icon,
-              scrolling ? step : -1,
-              widget.settings,
-              widget.foreground,
-              widget.columns,
-            ),
-          );
-        },
-      ),
-    ),
-  );
+        label: widget.icon == null
+            ? 'Aperçu du message ${widget.text}'
+            : 'Pictogramme ${widget.icon!.label}',
+        child: AspectRatio(
+          aspectRatio: widget.columns / 8,
+          child: AnimatedBuilder(
+            animation: _clock,
+            builder: (context, child) {
+              final scrolling = widget.icon == null &&
+                  widget.drawing == null &&
+                  (widget.settings.mode == ScrollMode.always ||
+                      (widget.settings.mode == ScrollMode.auto &&
+                          (_renderedColumns?.length ??
+                                  textColumns(
+                                          widget.text, widget.settings.alphabet)
+                                      .length) >
+                              widget.columns) ||
+                      widget.settings.mode == ScrollMode.appearance);
+              final step =
+                  (_clock.value * 120000 / widget.settings.speedMs).floor();
+              return CustomPaint(
+                painter: MatrixPainter(
+                  widget.text,
+                  widget.icon,
+                  scrolling && !_reducedMotion ? step : -1,
+                  widget.settings,
+                  widget.foreground,
+                  widget.columns,
+                  widget.drawing,
+                  _renderedColumns,
+                  _renderedPages,
+                ),
+              );
+            },
+          ),
+        ),
+      );
 }
 
 class MatrixPainter extends CustomPainter {
@@ -131,11 +218,21 @@ class MatrixPainter extends CustomPainter {
   final PanelSettings settings;
   final Color foreground;
   final int columns;
-  MatrixPainter(this.text, this.icon, this.step, this.settings, this.foreground, this.columns);
+  final String? drawing;
+  final List<int>? renderedColumns;
+  final List<List<int>>? renderedPages;
+  MatrixPainter(this.text, this.icon, this.step, this.settings, this.foreground,
+      this.columns, this.drawing, this.renderedColumns, this.renderedPages);
   @override
   void paint(Canvas canvas, Size size) {
     final cells = List.generate(8, (_) => List.filled(columns, false));
-    if (icon != null) {
+    if (drawing != null && drawing!.length == 256 && columns == 32) {
+      for (var y = 0; y < 8; y++) {
+        for (var x = 0; x < 32; x++) {
+          cells[y][x] = drawing![y * 32 + x] == '1';
+        }
+      }
+    } else if (icon != null) {
       for (var y = 0; y < 8; y++) {
         for (var x = 0; x < 8; x++) {
           final left = (columns - 8) ~/ 2;
@@ -145,34 +242,66 @@ class MatrixPainter extends CustomPainter {
         }
       }
     } else {
-      final value = text.toUpperCase();
-      final width = value.length * 6;
-      final offset = step < 0
-          ? ((columns - width) / 2).floor()
+      var shownText = text;
+      var pageIndex = 0;
+      if (settings.mode == ScrollMode.appearance) {
+        final pages = appearancePages(text, settings.alphabet);
+        if (pages.isNotEmpty) {
+          final ticksPerPage = (3000 / settings.speedMs).round().clamp(1, 1000);
+          pageIndex = (step < 0 ? 0 : step ~/ ticksPerPage) % pages.length;
+          shownText = pages[pageIndex];
+        }
+      }
+      final values = requiresRasterFont(text, settings.alphabet)
+          ? (settings.mode == ScrollMode.appearance
+              ? (renderedPages != null && pageIndex < renderedPages!.length
+                  ? renderedPages![pageIndex]
+                  : <int>[])
+              : renderedColumns ?? <int>[])
+          : textColumns(shownText, settings.alphabet);
+      final width = values.length;
+      final moves = settings.mode == ScrollMode.always ||
+          (settings.mode == ScrollMode.auto && width > columns);
+      final offset = step < 0 || !moves
+          ? ((columns - width.clamp(0, columns)) / 2).floor()
           : (settings.right
-                ? (step % (width + columns)) - width
-                : columns - (step % (width + columns)));
-      for (var i = 0; i < value.length; i++) {
-        final rows = _font[value[i]] ?? _font['?']!;
-        for (var y = 0; y < 7; y++) {
-          for (var x = 0; x < 5; x++) {
-            final col = offset + i * 6 + x;
-            if (col >= 0 && col < columns)
-              cells[y][col] = (rows[y] & (1 << (4 - x))) != 0;
+              ? (step % (width + columns)) - width
+              : columns - (step % (width + columns)));
+      for (var i = 0; i < values.length; i++) {
+        final col = offset + i;
+        if (col >= 0 && col < columns) {
+          for (var y = 0; y < 8; y++) {
+            cells[y][col] = (values[i] & (0x80 >> y)) != 0;
           }
         }
       }
     }
     final pitch = size.width / columns;
+    var reveal = 1.0;
+    if (settings.mode == ScrollMode.appearance && step >= 0) {
+      final duration = settings.speedMs <= 20
+          ? 2400
+          : settings.speedMs >= 100
+              ? 4000
+              : 3000;
+      final elapsed = step * settings.speedMs % duration;
+      reveal = elapsed < 800
+          ? elapsed / 800
+          : elapsed > duration - 800
+              ? (duration - elapsed) / 800
+              : 1;
+      reveal = reveal.clamp(0.0, 1.0);
+    }
+    final litColor = Color.lerp(
+      Colors.black,
+      foreground,
+      0.35 + 0.65 * settings.brightness / 15,
+    )!;
     final paint = Paint();
     for (var y = 0; y < 8; y++) {
       for (var x = 0; x < columns; x++) {
-        paint.color = cells[y][x] && settings.power
-            ? Color.lerp(
-                const Color(0xff829f3d),
-                foreground,
-                settings.brightness / 15,
-              )!
+        paint.color = cells[y][x] && settings.power && settings.brightness > 0
+            ? litColor.withValues(alpha: reveal)
             : const Color(0xff233127);
         canvas.drawCircle(
           Offset((x + .5) * pitch, (y + .5) * pitch),
@@ -185,6 +314,13 @@ class MatrixPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant MatrixPainter old) =>
-      old.text != text || old.icon != icon || old.step != step ||
-      old.settings != settings || old.foreground != foreground || old.columns != columns;
+      old.text != text ||
+      old.icon != icon ||
+      old.step != step ||
+      old.settings != settings ||
+      old.foreground != foreground ||
+      old.columns != columns ||
+      old.drawing != drawing ||
+      old.renderedColumns != renderedColumns ||
+      old.renderedPages != renderedPages;
 }

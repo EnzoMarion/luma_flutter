@@ -23,10 +23,17 @@ class LumaController extends ChangeNotifier {
   PanelDevice? selected;
   final Map<String, PanelDevice> devices = {};
   PanelSettings settings = const PanelSettings();
-  List<String> favorites = ['MERCI', 'BONJOUR', 'A BIENTOT'];
+  PanelAlphabet alphabetForText(String text) =>
+      validateMessage(text, settings.alphabet) == null
+          ? settings.alphabet
+          : alphabetForMessage(text) ?? settings.alphabet;
+  PanelAlphabet get messageAlphabet => alphabetForText(message);
+  List<String> favorites = ['MERCI', 'BONJOUR', 'À BIENTÔT'];
   String message = 'MERCI';
   int icon = 0;
   int page = 0;
+  String? _displayedKind;
+  String _displayedPayload = '';
   bool get connected => state == LinkState.connected;
   void _emit() {
     if (!_disposed) notifyListeners();
@@ -35,12 +42,40 @@ class LumaController extends ChangeNotifier {
   Future<void> loadFavorites() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      final savedAlphabetName = prefs.getString('luma.alphabet_name');
+      final legacyAlphabetIndex = prefs.getInt('luma.alphabet') ?? 0;
+      final alphabet = savedAlphabetName != null
+          ? PanelAlphabet.values.firstWhere(
+              (value) => value.name == savedAlphabetName,
+              orElse: () => PanelAlphabet.latin,
+            )
+          : legacyAlphabetIndex == 7
+              ? PanelAlphabet.korean
+              : legacyAlphabetIndex == 6
+                  ? PanelAlphabet.latin
+                  : PanelAlphabet.values[legacyAlphabetIndex.clamp(
+                      0, PanelAlphabet.values.length - 1)];
+      settings = settings.copyWith(alphabet: alphabet);
       final saved = prefs.getStringList('favorites');
       if (saved != null)
         favorites = saved
-            .where((s) => validateMessage(s) == null)
-            .take(8)
+            .where((s) => alphabetForMessage(s) != null)
+            .map(normalizeMessage)
+            .toSet()
+            .take(20)
             .toList();
+      message = prefs.getString('luma.message') ?? message;
+      final brightness = prefs.getInt('luma.brightness') ?? settings.brightness;
+      final speed = prefs.getInt('luma.speed') ?? settings.speedMs;
+      final mode = prefs.getInt('luma.mode') ?? settings.mode.index;
+      icon =
+          (prefs.getInt('luma.icon') ?? icon).clamp(0, pixelIcons.length - 1);
+      settings = settings.copyWith(
+        brightness: brightness.clamp(0, 15),
+        speedMs: speed.clamp(20, 200),
+        mode: ScrollMode.values[mode.clamp(0, ScrollMode.values.length - 1)],
+        power: prefs.getBool('luma.power') ?? true,
+      );
       _emit();
     } catch (_) {
       /* Le contrôle du panneau reste utilisable sans stockage. */
@@ -48,16 +83,23 @@ class LumaController extends ChangeNotifier {
   }
 
   Future<void> toggleFavorite() async {
-    if (validateMessage(message) != null) {
-      error = validateMessage(message);
+    final detectedAlphabet = alphabetForMessage(message);
+    if (detectedAlphabet == null) {
+      error = validateMessage(message, settings.alphabet);
       _emit();
       return;
     }
-    if (favorites.contains(message)) {
-      favorites.remove(message);
+    final normalized = normalizeMessage(message);
+    if (favorites.contains(normalized)) {
+      favorites.remove(normalized);
     } else {
-      favorites = [...favorites, message];
-      if (favorites.length > 8) favorites.removeAt(0);
+      if (favorites.length >= 20) {
+        error =
+            '20 messages favoris maximum. Retire-en un pour en ajouter un autre.';
+        _emit();
+        return;
+      }
+      favorites = [...favorites, normalized];
     }
     _emit();
     try {
@@ -72,8 +114,9 @@ class LumaController extends ChangeNotifier {
   Future<void> _stopScan() async {
     _scanTimer?.cancel();
     _scanTimer = null;
-    await _scan?.cancel();
+    final subscription = _scan;
     _scan = null;
+    await subscription?.cancel();
   }
 
   Future<void> search({required bool demonstration}) async {
@@ -136,6 +179,12 @@ class LumaController extends ChangeNotifier {
       await _transport!.connect(device);
       if (_disposed || generation != _operation) return;
       state = LinkState.connected;
+      try {
+        await _transport!.sendPackets([clockSyncPacket(DateTime.now())]);
+      } catch (e) {
+        error =
+            'Panneau connecté ; synchronisation de l’heure impossible : ${_friendly(e)}';
+      }
     } catch (e) {
       if (_disposed || generation != _operation) return;
       error = _friendly(e);
@@ -150,7 +199,54 @@ class LumaController extends ChangeNotifier {
     error = null;
     _emit();
     try {
-      await _transport!.send(kind, payload);
+      if (kind == 'T' || kind == 'I' || kind == 'D') {
+        final brightness = !settings.power && settings.brightness == 0
+            ? 1
+            : settings.brightness;
+        await _transport!.send(
+            'S',
+            '$brightness:${settings.speedMs}:${settings.mode.index}:0:1',
+            settings.speedMs,
+            settings.mode,
+            settings.alphabet);
+        settings = settings.copyWith(power: true, brightness: brightness);
+        unawaited(_saveDraft());
+      }
+      final effectivePayload = kind == 'S' && !settings.power
+          ? '0:${settings.speedMs}:${settings.mode.index}:0:0'
+          : payload;
+      await _transport!.send(
+          kind,
+          effectivePayload,
+          settings.speedMs,
+          settings.mode,
+          kind == 'T' ? alphabetForText(effectivePayload) : settings.alphabet);
+      if (kind == 'C') {
+        await _transport!.send(
+            'S',
+            '0:${settings.speedMs}:${settings.mode.index}:0:0',
+            settings.speedMs,
+            settings.mode,
+            settings.alphabet);
+        settings = settings.copyWith(power: false);
+        unawaited(_saveDraft());
+      }
+      if (kind == 'S' && settings.power && _displayedKind != null) {
+        await _transport!.send(
+            _displayedKind!,
+            _displayedPayload,
+            settings.speedMs,
+            settings.mode,
+            _displayedKind == 'T'
+                ? alphabetForText(_displayedPayload)
+                : settings.alphabet);
+      } else if (kind == 'T' || kind == 'I' || kind == 'D') {
+        _displayedKind = kind;
+        _displayedPayload = payload;
+      } else if (kind == 'C') {
+        _displayedKind = null;
+        _displayedPayload = '';
+      }
       return true;
     } catch (e) {
       error = _friendly(e);
@@ -158,6 +254,35 @@ class LumaController extends ChangeNotifier {
     } finally {
       busy = false;
       _emit();
+    }
+  }
+
+  Future<bool> sendPackets(List<List<int>> packets) async {
+    if (!connected || busy) return false;
+    busy = true;
+    error = null;
+    _emit();
+    try {
+      await _transport!.sendPackets(packets);
+      return true;
+    } catch (e) {
+      error = _friendly(e);
+      return false;
+    } finally {
+      busy = false;
+      _emit();
+    }
+  }
+
+  Future<bool> sendLive(List<int> packet) async {
+    if (!connected || packet.isEmpty || packet.length > 20) return false;
+    try {
+      await _transport!.sendLive(packet);
+      return true;
+    } catch (e) {
+      error = _friendly(e);
+      _emit();
+      return false;
     }
   }
 
@@ -174,11 +299,13 @@ class LumaController extends ChangeNotifier {
 
   void updateMessage(String value) {
     message = value;
+    unawaited(_saveDraft());
     _emit();
   }
 
   void selectIcon(int value) {
     icon = value;
+    unawaited(_saveDraft());
     _emit();
   }
 
@@ -190,15 +317,33 @@ class LumaController extends ChangeNotifier {
 
   void updateSettings(PanelSettings value) {
     settings = value;
+    unawaited(_saveDraft());
     _emit();
+  }
+
+  Future<void> _saveDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('luma.message', message);
+      await prefs.setInt('luma.brightness', settings.brightness);
+      await prefs.setInt('luma.speed', settings.speedMs);
+      await prefs.setInt('luma.mode', settings.mode.index);
+      await prefs.setInt('luma.alphabet', settings.alphabet.index);
+      await prefs.setString('luma.alphabet_name', settings.alphabet.name);
+      await prefs.setBool('luma.power', settings.power);
+      await prefs.setInt('luma.icon', icon);
+    } catch (_) {
+      error = 'Impossible de sauvegarder les réglages.';
+      _emit();
+    }
   }
 
   static String _friendly(Object e) => e is TimeoutException
       ? 'Le panneau ne répond pas. Rapprochez-vous puis réessayez.'
       : e
-            .toString()
-            .replaceFirst('Bad state: ', '')
-            .replaceFirst('Invalid argument(s): ', '');
+          .toString()
+          .replaceFirst('Bad state: ', '')
+          .replaceFirst('Invalid argument(s): ', '');
   @override
   void dispose() {
     _disposed = true;

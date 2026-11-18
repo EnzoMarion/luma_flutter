@@ -1,25 +1,12 @@
-# Validation de cette livraison
+# Validation
 
-Date : 30 septembre 2026.
+Mise à jour du 18 novembre 2026.
 
-## Vérifications exécutées
-
-- Les 10 fichiers Dart ont été lus et formatés par Dart 3.13.5 : aucune erreur de syntaxe.
-- Analyse statique de `lib/protocol.dart`, `lib/transport.dart` et `tool/setup.dart` : **No issues found**.
-- `dart tool/check_protocol.dart` : **67 cas** de longueur/validation, fragmentation de 20 octets, valeurs de réglage, dimensions des six bitmaps et transport de démonstration, tous réussis.
-- La police Manrope et sa licence sont incluses dans le projet, sans chargement distant au lancement.
-
-## Ce qui reste à exécuter sur vos postes
-
-- Génération des dossiers natifs Android/iOS/web par `dart tool/setup.dart` avec Flutter installé.
-- Résolution des dépendances, analyse statique complète via `flutter analyze` et tests via `flutter test`.
-- Compilation Android et iOS, validation de la signature iOS.
-- Comparaison visuelle de l'application réellement exécutée avec la maquette Figma ; la création a utilisé une inspection du navigateur et non les outils d'extraction Figma.
-- Compilation du firmware PlatformIO, téléversement et essais matériels.
-- Autorisations BLE sur Android et iOS, recherche, découverte GATT, notifications et reconnexion sur téléphones physiques.
-
-Les tentatives d'installation de Flutter dans l'environnement de création ont échoué (téléchargement inaccessible). Dart seul a pu être installé pour les vérifications indépendantes de Flutter. Cette livraison contient donc du **code source de prototype**, pas une application compilée ni un résultat matériel validé. Aucun APK ou IPA n'est inclus.
-
-## Modifications du parcours Figma (30 septembre 2026)
-
-Après les vérifications listées plus haut, les écrans ont été étendus au parcours archivé de la maquette (choix RGB/rouge, palette, pictogrammes, réglages et confirmations) et le firmware a reçu un profil WS2812B. Ces ajouts n'ont **pas** été compilés ni exécutés. Vérifier la compilation Flutter et les deux profils PlatformIO avant de les utiliser sur du matériel ; la compatibilité dépend du type exact de matrice et de son câblage.
+- Le 18 novembre 2026, `flutter test --no-pub` a réussi : 11 tests.
+- `flutter analyze --no-pub --no-fatal-infos --no-fatal-warnings lib test` ne relève aucune erreur bloquante dans les sources de l'application. Il reste 23 remarques de style ou avertissements. L'analyse globale échoue sur des tests incompatibles du code tiers dans `vendor/reactive_ble_mobile`.
+- L'application Android a été compilée et lancée sur le téléphone Xiaomi de développement lors des itérations précédentes.
+- Le présent changement regroupe les modifications Flutter locales et actualise la documentation pour leur publication. Les essais physiques du panneau et la validation des écritures non latines sur chaque matrice restent à faire avec l'ESP32.
+- La compilation iOS et les fonctions natives spécifiques à iOS ne sont pas validées : ce travail requiert un Mac avec Xcode et un iPhone.
+- Les claviers sont ceux du système. Le choix d'alphabet dans l'app n'installe ni ne sélectionne automatiquement une langue de clavier.
+- Les glyphes hébreux, arabes, japonais et coréens sont rasterisés dans la hauteur de 8 pixels du panneau ; certains peuvent être difficiles à distinguer.
+- Le firmware présent sur le panneau doit employer les UUID et le protocole décrits dans `lib/protocol.dart`. Le sketch d'essai local dont l'UUID est différent n'est pas publié avec l'application.
